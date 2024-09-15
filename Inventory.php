@@ -579,111 +579,123 @@ class Inventory {
 	
 	// Product management 
 	public function getProductList() {
-		// Base SQL query with JOINs
-		$sqlQuery = "
-			SELECT * FROM ".$this->productTable." as p
+		// Base SQL query
+		$sqlQuery = "SELECT * FROM ".$this->productTable." as p
 			INNER JOIN ".$this->brandTable." as b ON b.id = p.brandid
 			INNER JOIN ".$this->categoryTable." as c ON c.categoryid = p.categoryid 
-			INNER JOIN ".$this->supplierTable." as s ON s.supplier_id = p.supplier";
+			INNER JOIN ".$this->supplierTable." as s ON s.supplier_id = p.supplier ";
 		
-		// Search condition
-		$searchValue = $_POST["search"]["value"] ?? '';
-		if (!empty($searchValue)) {
-			$sqlQuery .= " WHERE (b.bname LIKE ? 
-				OR c.name LIKE ? 
-				OR p.pname LIKE ? 
-				OR p.quantity LIKE ? 
-				OR s.supplier_name LIKE ? 
-				OR p.pid LIKE ?)";
+		// Prepare an array to hold query conditions and parameters
+		$queryParams = [];
+		$queryConditions = [];
+
+		// Handle search input securely
+		if (isset($_POST["search"]["value"]) && !empty($_POST["search"]["value"])) {
+			$searchValue = '%' . $_POST["search"]["value"] . '%';
+			$queryConditions[] = '(b.bname LIKE ? OR c.name LIKE ? OR p.pname LIKE ? OR p.quantity LIKE ? OR s.supplier_name LIKE ? OR p.pid LIKE ?)';
+			for ($i = 0; $i < 6; $i++) {
+				$queryParams[] = $searchValue; // Reuse the search value for all searchable fields
+			}
 		}
-		
-		// Order condition
-		$orderColumn = $_POST['order']['0']['column'] ?? 'p.pid';
-		$orderDirection = $_POST['order']['0']['dir'] ?? 'DESC';
-		$sqlQuery .= " ORDER BY ".$orderColumn." ".$orderDirection;
-	
-		// Limit and offset
-		$length = $_POST['length'] ?? -1;
-		$start = $_POST['start'] ?? 0;
-		if ($length != -1) {
-			$sqlQuery .= " LIMIT ?, ?";
+
+		// Append WHERE clause if there are conditions
+		if (count($queryConditions) > 0) {
+			$sqlQuery .= ' WHERE ' . implode(' AND ', $queryConditions);
 		}
-	
+
+		// Handle ordering
+		if (isset($_POST['order'])) {
+			$columnIndex = intval($_POST['order']['0']['column']);
+			$columnOrder = $_POST['order']['0']['dir'] === 'asc' ? 'ASC' : 'DESC';
+			$sqlQuery .= ' ORDER BY ' . $this->getColumnByIndex($columnIndex) . ' ' . $columnOrder;
+		} else {
+			$sqlQuery .= ' ORDER BY p.pid DESC';
+		}
+
+		// Handle pagination
+		if ($_POST['length'] != -1) {
+			$sqlQuery .= ' LIMIT ?, ?';
+			$queryParams[] = intval($_POST['start']);
+			$queryParams[] = intval($_POST['length']);
+		}
+
+		// Prepare and bind parameters using prepared statements
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
-			// Bind parameters for the search condition
-			if (!empty($searchValue)) {
-				$searchTerm = '%'.$searchValue.'%';
-				mysqli_stmt_bind_param($stmt, 'ssssss', $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm);
+			// If we have search parameters, bind them accordingly
+			if (count($queryParams) > 0) {
+				$types = str_repeat('s', count($queryParams) - 2) . 'ii';  // 's' for strings, 'ii' for integers (pagination)
+				mysqli_stmt_bind_param($stmt, $types, ...$queryParams);
 			}
-			
-			// Bind parameters for LIMIT and OFFSET
-			if ($length != -1) {
-				mysqli_stmt_bind_param($stmt, 'ii', $start, $length);
-			}
-			
+
+			// Execute the statement
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
 			$numRows = mysqli_num_rows($result);
-			$productData = array();
-			
+
+			// Process the result into productData array
+			$productData = [];
 			while ($product = mysqli_fetch_assoc($result)) {
-				$status = '';
-				if ($product['status'] == 'active') {
-					$status = '<span class="label label-success">Active</span>';
-				} else {
-					$status = '<span class="label label-danger">Inactive</span>';
-				}
-				
-				$productRow = array();
+				$status = $product['status'] == 'active' ? 
+					'<span class="label label-success">Active</span>' : 
+					'<span class="label label-danger">Inactive</span>';
+
+				$productRow = [];
 				$productRow[] = $product['pid'];
 				$productRow[] = $product['name'];
 				$productRow[] = $product['bname'];
-				$productRow[] = $product['pname'];    
-				$productRow[] = $product['model'];            
+				$productRow[] = $product['pname'];
+				$productRow[] = $product['model'];
 				$productRow[] = $product["quantity"];
 				$productRow[] = $product['supplier_name'];
 				$productRow[] = $status;
-				$productRow[] = '<div class="btn-group btn-group-sm"><button type="button" name="view" id="'.$product["pid"].'" class="btn btn-light bg-gradient border text-dark btn-sm rounded-0  view" title="View"><i class="fa fa-eye"></i></button><button type="button" name="update" id="'.$product["pid"].'" class="btn btn-primary btn-sm rounded-0  update" title="Update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="'.$product["pid"].'" class="btn btn-danger btn-sm rounded-0  delete" data-status="'.$product["status"].'" title="Delete"><i class="fa fa-trash"></i></button></div>';
-				
+				$productRow[] = '<div class="btn-group btn-group-sm">
+					<button type="button" name="view" id="'.$product["pid"].'" class="btn btn-light bg-gradient border text-dark btn-sm rounded-0 view" title="View"><i class="fa fa-eye"></i></button>
+					<button type="button" name="update" id="'.$product["pid"].'" class="btn btn-primary btn-sm rounded-0 update" title="Update"><i class="fa fa-edit"></i></button>
+					<button type="button" name="delete" id="'.$product["pid"].'" class="btn btn-danger btn-sm rounded-0 delete" data-status="'.$product["status"].'" title="Delete"><i class="fa fa-trash"></i></button>
+				</div>';
+
 				$productData[] = $productRow;
 			}
-			
-			mysqli_stmt_close($stmt);
-	
-			$outputData = array(
-				"draw"             => intval($_POST["draw"]),
-				"recordsTotal"     => $numRows,
-				"recordsFiltered"  => $numRows,
-				"data"             => $productData
-			);
-	
+
+			// Prepare output data
+			$outputData = [
+				"draw" => intval($_POST["draw"]),
+				"recordsTotal" => $numRows,
+				"recordsFiltered" => $numRows,
+				"data" => $productData
+			];
+
+			// Return JSON encoded data
 			echo json_encode($outputData);
+
+			// Close the statement
+			mysqli_stmt_close($stmt);
 		} else {
-			echo 'Database error';
+			// Handle error case
+			echo json_encode(['error' => 'Database error: ' . mysqli_error($this->dbConnect)]);
 		}
 	}
+
 	
-	public function getCategoryBrand($categoryid) {
-		$sqlQuery = "SELECT * FROM ".$this->brandTable." 
-			WHERE status = 'active' AND categoryid = ? 
-			ORDER BY bname ASC";
+	public function getCategoryBrand($categoryid){	
 		
+		$sqlQuery = "SELECT * FROM ".$this->brandTable." 
+			WHERE status = 'active' AND categoryid = ? ORDER BY bname ASC";
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
-			mysqli_stmt_bind_param($stmt, 'i', $categoryid);  
+			mysqli_stmt_bind_param($stmt, 'i', $categoryid);
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
-	
 			$dropdownHTML = '';
-			while ($brand = mysqli_fetch_assoc($result)) {
+			while ($brand = mysqli_fetch_assoc($result)) {	
 				$dropdownHTML .= '<option value="'.$brand["id"].'">'.$brand["bname"].'</option>';
 			}
-			
 			mysqli_stmt_close($stmt);
 			return $dropdownHTML;
 		} else {
-			return 'Database error';
+			return 'Database error: ' . mysqli_error($this->dbConnect);
 		}
 	}
+	
 	
 	public function supplierDropdownList() {
 		$sqlQuery = "SELECT * FROM ".$this->supplierTable." 
