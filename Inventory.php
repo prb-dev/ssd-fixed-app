@@ -1084,31 +1084,42 @@ class Inventory {
 	
 	// purchase
 	public function listPurchase() {
-		$sqlQuery = "SELECT ph.*, p.pname, s.supplier_name 
-			FROM ".$this->purchaseTable." as ph
-			INNER JOIN ".$this->productTable." as p ON p.pid = ph.product_id 
-			INNER JOIN ".$this->supplierTable." as s ON s.supplier_id = ph.supplier_id";
+		// Validate and sanitize order column
+		$allowedColumns = ['purchase_id', 'pname', 'quantity', 'supplier_name']; // Adjust as needed
+		$orderColumn = isset($_POST['order']['0']['column']) && in_array($_POST['order']['0']['column'], $allowedColumns) 
+			? $_POST['order']['0']['column'] 
+			: 'purchase_id';
 		
-		if (isset($_POST['order'])) {
-			$orderColumn = $_POST['order']['0']['column'];
-			$orderDir = $_POST['order']['0']['dir'];
-			$sqlQuery .= " ORDER BY $orderColumn $orderDir";
-		} else {
-			$sqlQuery .= " ORDER BY ph.purchase_id DESC";
-		}
+		// Validate and sanitize order direction
+		$orderDir = isset($_POST['order']['0']['dir']) && in_array(strtoupper($_POST['order']['0']['dir']), ['ASC', 'DESC']) 
+			? $_POST['order']['0']['dir'] 
+			: 'DESC';
+	
+		// Prepare SQL query
+		$sqlQuery = "SELECT ph.*, p.pname, s.supplier_name 
+					 FROM " . $this->purchaseTable . " as ph
+					 INNER JOIN " . $this->productTable . " as p ON p.pid = ph.product_id 
+					 INNER JOIN " . $this->supplierTable . " as s ON s.supplier_id = ph.supplier_id";
+		
+		$sqlQuery .= " ORDER BY $orderColumn $orderDir";
 		
 		if ($_POST['length'] != -1) {
-			$start = (int) $_POST['start'];
-			$length = (int) $_POST['length'];
-			$sqlQuery .= " LIMIT $start, $length";
+			$start = (int)$_POST['start'];
+			$length = (int)$_POST['length'];
+			$sqlQuery .= " LIMIT ?, ?";
 		}
-	
+		
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
+			if ($_POST['length'] != -1) {
+				// Bind limit parameters if applicable
+				mysqli_stmt_bind_param($stmt, 'ii', $start, $length);
+			}
+			
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
 			$numRows = mysqli_num_rows($result);
 			$purchaseData = array(); 
-	
+		
 			while ($purchase = mysqli_fetch_assoc($result)) {
 				$productRow = array();
 				$productRow[] = $purchase['purchase_id'];
@@ -1119,9 +1130,14 @@ class Inventory {
 				$purchaseData[] = $productRow;
 			}
 	
+			// For total records
+			$totalQuery = "SELECT COUNT(*) FROM " . $this->purchaseTable;
+			$totalResult = mysqli_query($this->dbConnect, $totalQuery);
+			$totalRecords = mysqli_fetch_array($totalResult)[0];
+			
 			$output = array(
 				"draw" => intval($_POST["draw"]),
-				"recordsTotal" => $numRows,
+				"recordsTotal" => $totalRecords,
 				"recordsFiltered" => $numRows,
 				"data" => $purchaseData
 			);
@@ -1132,6 +1148,7 @@ class Inventory {
 			echo 'Database error: ' . mysqli_error($this->dbConnect);
 		}
 	}
+	
 	
 	public function productDropdownList() {
 		// Prepare the SQL query
@@ -1236,25 +1253,22 @@ class Inventory {
 	
 	// order
 	public function listOrders() {
-		// Initialize query parts
-		$sqlQuery = "SELECT * FROM ".$this->orderTable." as o
-			INNER JOIN ".$this->customerTable." as c ON c.id = o.customer_id
-			INNER JOIN ".$this->productTable." as p ON p.pid = o.product_id ";
-	
-		// Validate and sanitize the order column and direction
+		$sqlQuery = "SELECT * FROM " . $this->orderTable . " as o
+			INNER JOIN " . $this->customerTable . " as c ON c.id = o.customer_id
+			INNER JOIN " . $this->productTable . " as p ON p.pid = o.product_id ";
 		$validColumns = ['order_id', 'pname', 'total_shipped', 'name'];
-		$orderColumn = isset($_POST['order'][0]['column']) && in_array($_POST['order'][0]['column'], $validColumns) ? $_POST['order'][0]['column'] : 'o.order_id';
-		$orderDirection = isset($_POST['order'][0]['dir']) && in_array(strtoupper($_POST['order'][0]['dir']), ['ASC', 'DESC']) ? strtoupper($_POST['order'][0]['dir']) : 'DESC';
+		$orderColumn = isset($_POST['order'][0]['column']) && in_array($_POST['order'][0]['column'], $validColumns) 
+			? $_POST['order'][0]['column'] 
+			: 'o.order_id';
+		$orderDirection = isset($_POST['order'][0]['dir']) && in_array(strtoupper($_POST['order'][0]['dir']), ['ASC', 'DESC']) 
+			? strtoupper($_POST['order'][0]['dir']) 
+			: 'DESC';
 		$sqlQuery .= 'ORDER BY ' . $orderColumn . ' ' . $orderDirection . ' ';
-	
-		// Add LIMIT clause
 		$start = isset($_POST['start']) ? intval($_POST['start']) : 0;
 		$length = isset($_POST['length']) ? intval($_POST['length']) : -1;
 		if ($length != -1) {
 			$sqlQuery .= 'LIMIT ?, ?';
 		}
-	
-		// Prepare and execute the query
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
 			if ($length != -1) {
 				mysqli_stmt_bind_param($stmt, 'ii', $start, $length);
@@ -1262,6 +1276,7 @@ class Inventory {
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
 			
+			// Count rows for pagination
 			$numRows = mysqli_num_rows($result);
 			$orderData = array();   
 			while ($order = mysqli_fetch_assoc($result)) {        
@@ -1287,6 +1302,7 @@ class Inventory {
 			echo 'Database error: ' . mysqli_error($this->dbConnect);
 		}
 	}
+	
 	
 	public function addOrder() {
 		// Prepare the SQL statement
