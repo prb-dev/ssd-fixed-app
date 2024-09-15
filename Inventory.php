@@ -38,14 +38,27 @@ class Inventory {
 		return $data;
 	}
 
-	private function getNumRows($sqlQuery) {
-		$result = mysqli_query($this->dbConnect, $sqlQuery);
-		if(!$result){
-			die('Error in query: '. mysqli_error());
+	private function getNumRows(string $sqlQuery, array $params = [], string $types = ''): int {
+		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
+			if (!empty($params)) {
+				mysqli_stmt_bind_param($stmt, $types, ...$params);
+			}
+			mysqli_stmt_execute($stmt);
+			$result = mysqli_stmt_get_result($stmt);
+			if (!$result) {
+				die('Error in query: ' . mysqli_error($this->dbConnect));
+			}
+			$numRows = mysqli_num_rows($result);
+			mysqli_free_result($result);
+			mysqli_stmt_close($stmt);
+	
+			return $numRows;
+		} else {
+			die('Error preparing statement: ' . mysqli_error($this->dbConnect));
 		}
-		$numRows = mysqli_num_rows($result);
-		return $numRows;
 	}
+	
+	
 
 	public function login($email, $password){
 		$password = md5($password);
@@ -172,149 +185,172 @@ class Inventory {
 		$columns = ['id', 'name', 'address', 'mobile', 'balance'];
 		return isset($columns[$index]) ? $columns[$index] : 'id';
 	}
-	
 	public function saveCustomer() {
+		// Sanitize inputs to handle nulls or unexpected values
 		$name = $_POST['cname'] ?? '';
 		$address = $_POST['address'] ?? '';
 		$mobile = $_POST['mobile'] ?? '';
-		$balance = $_POST['balance'] ?? '';
+		$balance = $_POST['balance'] ?? 0.0;  // Default to 0.0 if not provided
 	
+		// SQL query with placeholders
 		$sqlInsert = "
-			INSERT INTO ".$this->customerTable." (name, address, mobile, balance) 
+			INSERT INTO " . $this->customerTable . " (name, address, mobile, balance) 
 			VALUES (?, ?, ?, ?)";
 	
+		// Prepare the statement
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlInsert)) {
-			mysqli_stmt_bind_param($stmt, "ssis", $name, $address, $mobile, $balance);
-			mysqli_stmt_execute($stmt);
+			// Bind parameters (s = string, d = double/float)
+			mysqli_stmt_bind_param($stmt, "sssd", $name, $address, $mobile, $balance);
+	
+			// Execute the statement
+			if (mysqli_stmt_execute($stmt)) {
+				echo 'New Customer Added';
+			} else {
+				echo 'Error: ' . mysqli_error($this->dbConnect);
+			}
+	
+			// Close the statement
 			mysqli_stmt_close($stmt);
-			echo 'New Customer Added';
 		} else {
-			echo 'Database error';
+			echo 'Database error: ' . mysqli_error($this->dbConnect);
 		}
 	}
+	
 				
 	public function updateCustomer() {
-		if (isset($_POST['userid']) && !empty($_POST['userid'])) {
-			$userId = $_POST['userid'];
+		if(isset($_POST['userid'])) {
+			$userid = $_POST['userid'] ?? 0;
 			$name = $_POST['cname'] ?? '';
 			$address = $_POST['address'] ?? '';
 			$mobile = $_POST['mobile'] ?? '';
-			$balance = $_POST['balance'] ?? '';
+			$balance = $_POST['balance'] ?? 0.0;
 	
 			$sqlUpdate = "
-				UPDATE ".$this->customerTable." 
-				SET name = ?, address = ?, mobile = ?, balance = ? 
+				UPDATE " . $this->customerTable . " 
+				SET name = ?, address = ?, mobile = ?, balance = ?
 				WHERE id = ?";
 	
 			if ($stmt = mysqli_prepare($this->dbConnect, $sqlUpdate)) {
-				mysqli_stmt_bind_param($stmt, "ssssi", $name, $address, $mobile, $balance, $userId);
-				mysqli_stmt_execute($stmt);
+				mysqli_stmt_bind_param($stmt, "sssdi", $name, $address, $mobile, $balance, $userid);
+				if (mysqli_stmt_execute($stmt)) {
+					echo 'Customer Edited';
+				} else {
+					echo 'Error: ' . mysqli_error($this->dbConnect);
+				}
 				mysqli_stmt_close($stmt);
-				echo 'Customer Edited';
 			} else {
-				echo 'Database error';
+				echo 'Database error: ' . mysqli_error($this->dbConnect);
 			}
 		} else {
-			echo 'Invalid user ID';
+			echo 'No user ID provided';
 		}
 	}
 		
 	public function deleteCustomer() {
-		if (isset($_POST['userid']) && !empty($_POST['userid'])) {
-			$userId = $_POST['userid'];
+		if (isset($_POST['userid'])) {
+			$userid = $_POST['userid'] ?? 0;
 	
 			$sqlQuery = "
-				DELETE FROM ".$this->customerTable." 
+				DELETE FROM " . $this->customerTable . " 
 				WHERE id = ?";
 	
 			if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
-				mysqli_stmt_bind_param($stmt, "i", $userId);
-				mysqli_stmt_execute($stmt);
+				mysqli_stmt_bind_param($stmt, "i", $userid);
+				if (mysqli_stmt_execute($stmt)) {
+					echo 'Customer Deleted';
+				} else {
+					echo 'Error: ' . mysqli_error($this->dbConnect);
+				}
 				mysqli_stmt_close($stmt);
-				echo 'Customer Deleted';
 			} else {
-				echo 'Database error';
+				echo 'Database error: ' . mysqli_error($this->dbConnect);
 			}
 		} else {
-			echo 'Invalid user ID';
+			echo 'No user ID provided';
 		}
 	}
 	
 	// Category functions
 	public function getCategoryList() {
-		$searchValue = $_POST["search"]["value"] ?? '';
-		$start = isset($_POST['start']) ? intval($_POST['start']) : 0;
-		$length = isset($_POST['length']) ? intval($_POST['length']) : 10;
-		$orderColumn = isset($_POST['order']['0']['column']) ? intval($_POST['order']['0']['column']) : 0;
-		$orderDir = isset($_POST['order']['0']['dir']) ? $_POST['order']['0']['dir'] : 'DESC';
-	
-		$sqlQuery = "SELECT * FROM ".$this->categoryTable;
+		$sqlQuery = "SELECT * FROM " . $this->categoryTable;
 		$queryParams = [];
 		$queryConditions = [];
 	
-		if (!empty($searchValue)) {
-			$searchValue = '%' . $searchValue . '%';
+		// Handle search input securely
+		if (!empty($_POST["search"]["value"])) {
+			$searchValue = '%' . $_POST["search"]["value"] . '%';
 			$queryConditions[] = '(name LIKE ? OR status LIKE ?)';
 			$queryParams[] = $searchValue;
 			$queryParams[] = $searchValue;
 		}
 	
+		// Append WHERE clause if there are conditions
 		if (count($queryConditions) > 0) {
 			$sqlQuery .= ' WHERE ' . implode(' AND ', $queryConditions);
 		}
 	
-		if (!empty($orderColumn)) {
-			$columns = ['categoryid', 'name', 'status']; // Map column index to actual column names
-			$orderColumn = isset($columns[$orderColumn]) ? $columns[$orderColumn] : 'categoryid';
-			$sqlQuery .= ' ORDER BY ' . $orderColumn . ' ' . ($orderDir === 'asc' ? 'ASC' : 'DESC');
+		// Handle ordering
+		if (!empty($_POST["order"])) {
+			$columnIndex = intval($_POST['order']['0']['column']);
+			$columnOrder = $_POST['order']['0']['dir'] === 'asc' ? 'ASC' : 'DESC';
+			$sqlQuery .= ' ORDER BY ' . $this->getColumnByIndex($columnIndex) . ' ' . $columnOrder;
 		} else {
 			$sqlQuery .= ' ORDER BY categoryid DESC';
 		}
 	
-		if ($length != -1) {
+		// Handle pagination
+		if ($_POST["length"] != -1) {
 			$sqlQuery .= ' LIMIT ?, ?';
-			$queryParams[] = $start;
-			$queryParams[] = $length;
+			$queryParams[] = intval($_POST['start']);
+			$queryParams[] = intval($_POST['length']);
 		}
 	
+		// Prepare the query
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
+			// Dynamically bind the parameters
 			if (count($queryParams) > 0) {
-				$types = str_repeat('s', count($queryParams) - 2) . 'ii'; // Adjust types for parameters
+				$types = str_repeat('s', count($queryParams) - 2) . 'ii';  // 's' for string, 'i' for integers
 				mysqli_stmt_bind_param($stmt, $types, ...$queryParams);
 			}
 	
+			// Execute the statement and fetch the result
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
 			$numRows = mysqli_num_rows($result);
 	
+			// Process the result into the categoryData array
 			$categoryData = [];
 			while ($category = mysqli_fetch_assoc($result)) {
 				$categoryRows = [];
-				$status = $category['status'] === 'active'
+				$status = $category['status'] == 'active'
 					? '<span class="label label-success">Active</span>'
 					: '<span class="label label-danger">Inactive</span>';
 	
 				$categoryRows[] = $category['categoryid'];
 				$categoryRows[] = $category['name'];
 				$categoryRows[] = $status;
-				$categoryRows[] = '<button type="button" name="update" id="'.$category["categoryid"].'" class="btn btn-primary btn-sm rounded-0 update" title="Update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="'.$category["categoryid"].'" class="btn btn-danger btn-sm rounded-0 delete" title="Delete"><i class="fa fa-trash"></i></button>';
+				$categoryRows[] = '<button type="button" name="update" id="' . $category["categoryid"] . '" class="btn btn-primary btn-sm rounded-0 update" title="Update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="' . $category["categoryid"] . '" class="btn btn-danger btn-sm rounded-0 delete" title="Delete"><i class="fa fa-trash"></i></button>';
+	
 				$categoryData[] = $categoryRows;
 			}
 	
-			mysqli_stmt_close($stmt);
-		} else {
-			echo json_encode(['error' => 'Database error']);
-			return;
-		}
+			// Return the final output as JSON
+			$output = [
+				"draw" => intval($_POST["draw"]),
+				"recordsTotal" => $numRows,
+				"recordsFiltered" => $numRows,
+				"data" => $categoryData
+			];
 	
-		$output = [
-			"draw" => intval($_POST["draw"]),
-			"recordsTotal" => $numRows,
-			"recordsFiltered" => $numRows,
-			"data" => $categoryData
-		];
-		echo json_encode($output);
+			// Close the statement
+			mysqli_stmt_close($stmt);
+			echo json_encode($output);
+		} else {
+			// Handle errors
+			echo json_encode(['error' => 'Database error: ' . mysqli_error($this->dbConnect)]);
+		}
 	}
+	
 	
 	public function saveCategory() {
 		$category = $_POST['category'] ?? '';
@@ -898,56 +934,87 @@ class Inventory {
 	// supplier 
 	public function getSupplierList() {
 		$searchValue = !empty($_POST["search"]["value"]) ? $_POST["search"]["value"] : '';
-		$orderColumn = isset($_POST['order']['0']['column']) ? $_POST['order']['0']['column'] : 'supplier_id';
+		$orderColumnIndex = isset($_POST['order']['0']['column']) ? (int)$_POST['order']['0']['column'] : 0;
 		$orderDirection = isset($_POST['order']['0']['dir']) ? $_POST['order']['0']['dir'] : 'DESC';
 		$start = isset($_POST['start']) ? (int)$_POST['start'] : 0;
 		$length = isset($_POST['length']) ? (int)$_POST['length'] : 10;
 		
+		// Define allowed columns for sorting
+		$allowedColumns = ['supplier_id', 'supplier_name', 'mobile', 'address', 'status'];
+		$orderByColumn = isset($allowedColumns[$orderColumnIndex]) ? $allowedColumns[$orderColumnIndex] : 'supplier_id';
+	
+		// Validate order direction
+		$orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
+	
 		// Prepare SQL query with placeholders
-		$sqlQuery = "SELECT * FROM ".$this->supplierTable." 
+		$sqlQuery = "SELECT * FROM " . $this->supplierTable . " 
 					 WHERE supplier_name LIKE ? 
 					 OR address LIKE ? 
-					 ORDER BY $orderColumn $orderDirection 
+					 ORDER BY $orderByColumn $orderDirection 
 					 LIMIT ?, ?";
-		
+	
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
 			// Bind parameters
 			$searchTerm = "%$searchValue%";
 			mysqli_stmt_bind_param($stmt, 'ssii', $searchTerm, $searchTerm, $start, $length);
-			
+	
 			// Execute the statement
 			mysqli_stmt_execute($stmt);
-			
+	
 			// Get the result
 			$result = mysqli_stmt_get_result($stmt);
-			
+	
 			$supplierData = array();
 			while ($supplier = mysqli_fetch_assoc($result)) {
 				$status = $supplier['status'] == 'active'
 					? '<span class="label label-success">Active</span>'
 					: '<span class="label label-danger">Inactive</span>';
-				
+	
 				$supplierRows = array();
 				$supplierRows[] = $supplier['supplier_id'];
 				$supplierRows[] = $supplier['supplier_name'];
 				$supplierRows[] = $supplier['mobile'];
 				$supplierRows[] = $supplier['address'];
 				$supplierRows[] = $status;
-				$supplierRows[] = '<div class="btn-group btn-group-sm"><button type="button" name="update" id="'.$supplier["supplier_id"].'" class="btn btn-primary btn-sm rounded-0  update" title="Update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="'.$supplier["supplier_id"].'" class="btn btn-danger btn-sm rounded-0  delete"  title="Delete"><i class="fa fa-trash"></i></button></div>';
-				
+				$supplierRows[] = '<div class="btn-group btn-group-sm">
+					<button type="button" name="update" id="' . $supplier["supplier_id"] . '" class="btn btn-primary btn-sm rounded-0 update" title="Update">
+						<i class="fa fa-edit"></i>
+					</button>
+					<button type="button" name="delete" id="' . $supplier["supplier_id"] . '" class="btn btn-danger btn-sm rounded-0 delete" title="Delete">
+						<i class="fa fa-trash"></i>
+					</button>
+				</div>';
+	
 				$supplierData[] = $supplierRows;
 			}
-			
+	
+			// Prepare total count query
+			$totalQuery = "SELECT COUNT(*) as total FROM " . $this->supplierTable;
+	
+			if ($totalStmt = mysqli_prepare($this->dbConnect, $totalQuery)) {
+				// Execute total count query
+				mysqli_stmt_execute($totalStmt);
+				$totalResult = mysqli_stmt_get_result($totalStmt);
+				$totalRow = mysqli_fetch_assoc($totalResult);
+				$totalRecords = $totalRow['total'];
+	
+				// Close the total count statement
+				mysqli_stmt_close($totalStmt);
+			} else {
+				$totalRecords = 0;
+			}
+	
+			// Prepare output
 			$output = array(
 				"draw" => intval($_POST["draw"]),
-				"recordsTotal" => mysqli_num_rows(mysqli_query($this->dbConnect, "SELECT * FROM ".$this->supplierTable)),
+				"recordsTotal" => $totalRecords,
 				"recordsFiltered" => mysqli_num_rows($result),
 				"data" => $supplierData
 			);
-			
-			// Close the statement
+	
+			// Close the main statement
 			mysqli_stmt_close($stmt);
-			
+	
 			// Output the result
 			echo json_encode($output);
 		} else {
@@ -1067,14 +1134,37 @@ class Inventory {
 	}
 	
 	public function productDropdownList() {
-		$sqlQuery = "SELECT * FROM ".$this->productTable." ORDER BY pname ASC";
-		$result = mysqli_query($this->dbConnect, $sqlQuery);
-		$dropdownHTML = '';
-		while ($product = mysqli_fetch_assoc($result)) {
-			$dropdownHTML .= '<option value="'.htmlspecialchars($product["pid"], ENT_QUOTES, 'UTF-8').'">'.htmlspecialchars($product["pname"], ENT_QUOTES, 'UTF-8').'</option>';
+		// Prepare the SQL query
+		$sqlQuery = "SELECT * FROM " . $this->productTable . " ORDER BY pname ASC";
+		
+		// Use a prepared statement
+		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
+			// Execute the statement
+			mysqli_stmt_execute($stmt);
+			
+			// Get the result
+			$result = mysqli_stmt_get_result($stmt);
+			
+			$dropdownHTML = '';
+			while ($product = mysqli_fetch_assoc($result)) {
+				// Safely output the HTML
+				$dropdownHTML .= '<option value="' . htmlspecialchars($product["pid"], ENT_QUOTES, 'UTF-8') . '">' .
+								 htmlspecialchars($product["pname"], ENT_QUOTES, 'UTF-8') . '</option>';
+			}
+			
+			// Free result set
+			mysqli_free_result($result);
+			
+			// Close the statement
+			mysqli_stmt_close($stmt);
+			
+			return $dropdownHTML;
+		} else {
+			// Handle the error
+			die('Error preparing the SQL query: ' . mysqli_error($this->dbConnect));
 		}
-		return $dropdownHTML;
 	}
+	
 	
 	public function addPurchase() {
 		if (isset($_POST['product'], $_POST['quantity'], $_POST['supplierid'])) {
@@ -1269,15 +1359,22 @@ class Inventory {
 	}
 	
 	public function customerDropdownList() {
-		$sqlQuery = "SELECT * FROM ".$this->customerTable." ORDER BY name ASC";
-		if ($result = mysqli_query($this->dbConnect, $sqlQuery)) {
+		$sqlQuery = "SELECT * FROM " . $this->customerTable . " ORDER BY name ASC";
+		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
+			mysqli_stmt_execute($stmt);
+			$result = mysqli_stmt_get_result($stmt);
+			
 			$dropdownHTML = '';
 			while ($customer = mysqli_fetch_assoc($result)) {
-				$dropdownHTML .= '<option value="'.htmlspecialchars($customer["id"], ENT_QUOTES, 'UTF-8').'">'.htmlspecialchars($customer["name"], ENT_QUOTES, 'UTF-8').'</option>';
+				$dropdownHTML .= '<option value="' . htmlspecialchars($customer["id"], ENT_QUOTES, 'UTF-8') . '">' .
+								 htmlspecialchars($customer["name"], ENT_QUOTES, 'UTF-8') . '</option>';
 			}
+			mysqli_free_result($result);
+			mysqli_stmt_close($stmt);
+			
 			return $dropdownHTML;
 		} else {
-			echo 'Database error: ' . mysqli_error($this->dbConnect);
+			die('Error preparing the SQL query: ' . mysqli_error($this->dbConnect));
 		}
 	}
 	
