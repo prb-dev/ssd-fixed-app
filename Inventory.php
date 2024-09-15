@@ -1084,70 +1084,86 @@ class Inventory {
 	
 	// purchase
 	public function listPurchase() {
-		// Validate and sanitize order column
-		$allowedColumns = ['purchase_id', 'pname', 'quantity', 'supplier_name']; // Adjust as needed
-		$orderColumn = isset($_POST['order']['0']['column']) && in_array($_POST['order']['0']['column'], $allowedColumns) 
-			? $_POST['order']['0']['column'] 
-			: 'purchase_id';
-		
-		// Validate and sanitize order direction
-		$orderDir = isset($_POST['order']['0']['dir']) && in_array(strtoupper($_POST['order']['0']['dir']), ['ASC', 'DESC']) 
-			? $_POST['order']['0']['dir'] 
-			: 'DESC';
+		$searchValue = !empty($_POST["search"]["value"]) ? $_POST["search"]["value"] : '';
+		$orderColumnIndex = isset($_POST['order']['0']['column']) ? (int)$_POST['order']['0']['column'] : 0;
+		$orderDirection = isset($_POST['order']['0']['dir']) ? $_POST['order']['0']['dir'] : 'DESC';
+		$start = isset($_POST['start']) ? (int)$_POST['start'] : 0;
+		$length = isset($_POST['length']) ? (int)$_POST['length'] : 10;
 	
-		// Prepare SQL query
+		// Define allowed columns for sorting
+		$allowedColumns = ['purchase_id', 'pname', 'quantity', 'supplier_name'];
+		$orderByColumn = isset($allowedColumns[$orderColumnIndex]) ? $allowedColumns[$orderColumnIndex] : 'purchase_id';
+	
+		// Validate order direction
+		$orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
+	
+		// Prepare SQL query with placeholders
 		$sqlQuery = "SELECT ph.*, p.pname, s.supplier_name 
-					 FROM " . $this->purchaseTable . " as ph
-					 INNER JOIN " . $this->productTable . " as p ON p.pid = ph.product_id 
-					 INNER JOIN " . $this->supplierTable . " as s ON s.supplier_id = ph.supplier_id";
-		
-		$sqlQuery .= " ORDER BY $orderColumn $orderDir";
-		
-		if ($_POST['length'] != -1) {
-			$start = (int)$_POST['start'];
-			$length = (int)$_POST['length'];
-			$sqlQuery .= " LIMIT ?, ?";
-		}
-		
+					 FROM " . $this->purchaseTable . " AS ph
+					 INNER JOIN " . $this->productTable . " AS p ON p.pid = ph.product_id 
+					 INNER JOIN " . $this->supplierTable . " AS s ON s.supplier_id = ph.supplier_id
+					 WHERE ph.purchase_id LIKE ? 
+					 OR p.pname LIKE ? 
+					 OR s.supplier_name LIKE ? 
+					 ORDER BY $orderByColumn $orderDirection 
+					 LIMIT ?, ?";
+	
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
-			if ($_POST['length'] != -1) {
-				// Bind limit parameters if applicable
-				mysqli_stmt_bind_param($stmt, 'ii', $start, $length);
-			}
-			
+			// Bind parameters
+			$searchTerm = "%$searchValue%";
+			mysqli_stmt_bind_param($stmt, 'sssii', $searchTerm, $searchTerm, $searchTerm, $start, $length);
+	
+			// Execute the statement
 			mysqli_stmt_execute($stmt);
+	
+			// Get the result
 			$result = mysqli_stmt_get_result($stmt);
 			$numRows = mysqli_num_rows($result);
-			$purchaseData = array(); 
-		
+			$purchaseData = array();
+	
 			while ($purchase = mysqli_fetch_assoc($result)) {
 				$productRow = array();
 				$productRow[] = $purchase['purchase_id'];
 				$productRow[] = $purchase['pname'];
 				$productRow[] = $purchase['quantity'];            
 				$productRow[] = $purchase['supplier_name'];            
-				$productRow[] = '<div class="btn-group btn-group-sm"><button type="button" name="update" id="'.$purchase["purchase_id"].'" class="btn btn-primary btn-sm rounded-0  update" title="Update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="'.$purchase["purchase_id"].'" class="btn btn-danger btn-sm rounded-0  delete" title="Delete"><i class="fa fa-trash"></i></button></div>';
+				$productRow[] = '<div class="btn-group btn-group-sm">
+									<button type="button" name="update" id="'.$purchase["purchase_id"].'" class="btn btn-primary btn-sm rounded-0 update" title="Update">
+										<i class="fa fa-edit"></i>
+									</button>
+									<button type="button" name="delete" id="'.$purchase["purchase_id"].'" class="btn btn-danger btn-sm rounded-0 delete" title="Delete">
+										<i class="fa fa-trash"></i>
+									</button>
+								</div>';
 				$purchaseData[] = $productRow;
 			}
 	
 			// For total records
 			$totalQuery = "SELECT COUNT(*) FROM " . $this->purchaseTable;
-			$totalResult = mysqli_query($this->dbConnect, $totalQuery);
-			$totalRecords = mysqli_fetch_array($totalResult)[0];
-			
+			if ($totalResult = mysqli_query($this->dbConnect, $totalQuery)) {
+				$totalRecords = mysqli_fetch_array($totalResult)[0];
+			} else {
+				$totalRecords = 0;
+			}
+	
+			// Prepare output
 			$output = array(
 				"draw" => intval($_POST["draw"]),
 				"recordsTotal" => $totalRecords,
 				"recordsFiltered" => $numRows,
 				"data" => $purchaseData
 			);
-			
+	
+			// Output the result
 			echo json_encode($output);
+	
+			// Close the statement
 			mysqli_stmt_close($stmt);
 		} else {
 			echo 'Database error: ' . mysqli_error($this->dbConnect);
 		}
 	}
+	
 	
 	
 	public function productDropdownList() {
@@ -1253,53 +1269,86 @@ class Inventory {
 	
 	// order
 	public function listOrders() {
-		$sqlQuery = "SELECT * FROM " . $this->orderTable . " as o
-			INNER JOIN " . $this->customerTable . " as c ON c.id = o.customer_id
-			INNER JOIN " . $this->productTable . " as p ON p.pid = o.product_id ";
-		$validColumns = ['order_id', 'pname', 'total_shipped', 'name'];
-		$orderColumn = isset($_POST['order'][0]['column']) && in_array($_POST['order'][0]['column'], $validColumns) 
-			? $_POST['order'][0]['column'] 
-			: 'o.order_id';
-		$orderDirection = isset($_POST['order'][0]['dir']) && in_array(strtoupper($_POST['order'][0]['dir']), ['ASC', 'DESC']) 
-			? strtoupper($_POST['order'][0]['dir']) 
-			: 'DESC';
-		$sqlQuery .= 'ORDER BY ' . $orderColumn . ' ' . $orderDirection . ' ';
-		$start = isset($_POST['start']) ? intval($_POST['start']) : 0;
-		$length = isset($_POST['length']) ? intval($_POST['length']) : -1;
-		if ($length != -1) {
-			$sqlQuery .= 'LIMIT ?, ?';
-		}
+		$searchValue = !empty($_POST["search"]["value"]) ? $_POST["search"]["value"] : '';
+		$orderColumnIndex = isset($_POST['order']['0']['column']) ? (int)$_POST['order']['0']['column'] : 0;
+		$orderDirection = isset($_POST['order']['0']['dir']) ? $_POST['order']['0']['dir'] : 'DESC';
+		$start = isset($_POST['start']) ? (int)$_POST['start'] : 0;
+		$length = isset($_POST['length']) ? (int)$_POST['length'] : 10;
+	
+		// Define allowed columns for sorting
+		$allowedColumns = ['order_id', 'pname', 'total_shipped', 'name'];
+		$orderByColumn = isset($allowedColumns[$orderColumnIndex]) ? $allowedColumns[$orderColumnIndex] : 'order_id';
+	
+		// Validate order direction
+		$orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
+	
+		// Prepare SQL query with placeholders
+		$sqlQuery = "SELECT o.order_id, p.pname, o.total_shipped, c.name 
+					 FROM " . $this->orderTable . " AS o
+					 INNER JOIN " . $this->customerTable . " AS c ON c.id = o.customer_id
+					 INNER JOIN " . $this->productTable . " AS p ON p.pid = o.product_id 
+					 WHERE o.order_id LIKE ? 
+					 OR p.pname LIKE ? 
+					 OR c.name LIKE ? 
+					 ORDER BY $orderByColumn $orderDirection 
+					 LIMIT ?, ?";
+	
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
-			if ($length != -1) {
-				mysqli_stmt_bind_param($stmt, 'ii', $start, $length);
-			}
+			// Bind parameters
+			$searchTerm = "%$searchValue%";
+			mysqli_stmt_bind_param($stmt, 'sssii', $searchTerm, $searchTerm, $searchTerm, $start, $length);
+	
+			// Execute the statement
 			mysqli_stmt_execute($stmt);
+	
+			// Get the result
 			$result = mysqli_stmt_get_result($stmt);
-			
-			// Count rows for pagination
-			$numRows = mysqli_num_rows($result);
-			$orderData = array();   
-			while ($order = mysqli_fetch_assoc($result)) {        
+	
+			$orderData = array();
+			while ($order = mysqli_fetch_assoc($result)) {
 				$orderRow = array();
-				$orderRow[] = htmlspecialchars($order['order_id'], ENT_QUOTES, 'UTF-8');
-				$orderRow[] = htmlspecialchars($order['pname'], ENT_QUOTES, 'UTF-8');
-				$orderRow[] = htmlspecialchars($order['total_shipped'], ENT_QUOTES, 'UTF-8');    
-				$orderRow[] = htmlspecialchars($order['name'], ENT_QUOTES, 'UTF-8');            
-				$orderRow[] = '<div class="btn-group btn-group-sm"><button type="button" name="update" id="'.htmlspecialchars($order["order_id"], ENT_QUOTES, 'UTF-8').'" class="btn btn-primary btn-sm rounded-0 update" title="Update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="'.htmlspecialchars($order["order_id"], ENT_QUOTES, 'UTF-8').'" class="btn btn-danger btn-sm rounded-0 delete" title="Delete"><i class="fa fa-trash"></i></button></div>';
+				$orderRow[] = $order['order_id'];
+				$orderRow[] = $order['pname'];
+				$orderRow[] = $order['total_shipped'];
+				$orderRow[] = $order['name'];
+				$orderRow[] = '<div class="btn-group btn-group-sm">
+					<button type="button" name="update" id="' . $order["order_id"] . '" class="btn btn-primary btn-sm rounded-0 update" title="Update">
+						<i class="fa fa-edit"></i>
+					</button>
+					<button type="button" name="delete" id="' . $order["order_id"] . '" class="btn btn-danger btn-sm rounded-0 delete" title="Delete">
+						<i class="fa fa-trash"></i>
+					</button>
+				</div>';
 				$orderData[] = $orderRow;
 			}
-			mysqli_stmt_close($stmt);
-			
-			// Output the result
+	
+			// Prepare total count query
+			$totalQuery = "SELECT COUNT(*) as total FROM " . $this->orderTable;
+			if ($totalStmt = mysqli_prepare($this->dbConnect, $totalQuery)) {
+				mysqli_stmt_execute($totalStmt);
+				$totalResult = mysqli_stmt_get_result($totalStmt);
+				$totalRow = mysqli_fetch_assoc($totalResult);
+				$totalRecords = $totalRow['total'];
+				mysqli_stmt_close($totalStmt);
+			} else {
+				$totalRecords = 0;
+			}
+	
+			// Prepare output
 			$output = array(
 				"draw" => intval($_POST["draw"]),
-				"recordsTotal" => $numRows,
-				"recordsFiltered" => $numRows,
+				"recordsTotal" => $totalRecords,
+				"recordsFiltered" => mysqli_num_rows($result),
 				"data" => $orderData
 			);
+	
+			// Close the main statement
+			mysqli_stmt_close($stmt);
+	
+			// Output the result
 			echo json_encode($output);
 		} else {
-			echo 'Database error: ' . mysqli_error($this->dbConnect);
+			echo 'Database error';
 		}
 	}
 	
