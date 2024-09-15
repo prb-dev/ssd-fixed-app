@@ -69,21 +69,17 @@ class Inventory {
 		}
 	}
 	public function getCustomer() {
-		
-		$userId = isset($_POST['userid']) ? $_POST['userid'] : '';
-		$sqlQuery = "
-			SELECT * FROM ".$this->customerTable." 
-			WHERE id = ?";
+		$sqlQuery = "SELECT * FROM ".$this->customerTable." WHERE id = ?";
+	
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
-			mysqli_stmt_bind_param($stmt, "s", $userId);
+			mysqli_stmt_bind_param($stmt, 'i', $_POST["userid"]);
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
 			$row = mysqli_fetch_array($result, MYSQLI_ASSOC);
 			mysqli_stmt_close($stmt);
 			echo json_encode($row);
 		} else {
-			
-			echo json_encode(['error' => 'Database error']);
+			echo 'Database error: ' . mysqli_error($this->dbConnect);
 		}
 	}
 	
@@ -91,7 +87,8 @@ class Inventory {
 		$sqlQuery = "SELECT * FROM ".$this->customerTable;
 		$queryParams = [];
 		$queryConditions = [];
-		
+	
+		// Handle search input securely
 		if (!empty($_POST["search"]["value"])) {
 			$searchValue = '%' . $_POST["search"]["value"] . '%';
 			$queryConditions[] = '(id LIKE ? OR name LIKE ? OR address LIKE ? OR mobile LIKE ? OR balance LIKE ?)';
@@ -101,11 +98,13 @@ class Inventory {
 			$queryParams[] = $searchValue;
 			$queryParams[] = $searchValue;
 		}
-		
+	
+		// Append WHERE clause if there are conditions
 		if (count($queryConditions) > 0) {
 			$sqlQuery .= ' WHERE ' . implode(' AND ', $queryConditions);
 		}
-		
+	
+		// Handle ordering
 		if (!empty($_POST["order"])) {
 			$columnIndex = intval($_POST['order']['0']['column']);
 			$columnOrder = $_POST['order']['0']['dir'] === 'asc' ? 'ASC' : 'DESC';
@@ -113,23 +112,28 @@ class Inventory {
 		} else {
 			$sqlQuery .= ' ORDER BY id DESC';
 		}
-		
+	
+		// Handle pagination
 		if ($_POST["length"] != -1) {
 			$sqlQuery .= ' LIMIT ?, ?';
 			$queryParams[] = intval($_POST['start']);
 			$queryParams[] = intval($_POST['length']);
 		}
-		
+	
+		// Prepare the query
 		if ($stmt = mysqli_prepare($this->dbConnect, $sqlQuery)) {
+			// Dynamically bind the parameters
 			if (count($queryParams) > 0) {
-				$types = str_repeat('s', count($queryParams) - 2) . 'ii';
+				$types = str_repeat('s', count($queryParams) - 2) . 'ii';  // 's' for string, 'i' for integers
 				mysqli_stmt_bind_param($stmt, $types, ...$queryParams);
 			}
 	
+			// Execute the statement and fetch the result
 			mysqli_stmt_execute($stmt);
 			$result = mysqli_stmt_get_result($stmt);
 			$numRows = mysqli_num_rows($result);
 	
+			// Process the result into the customerData array
 			$customerData = [];
 			while ($customer = mysqli_fetch_assoc($result)) {
 				$customerRows = [
@@ -138,26 +142,31 @@ class Inventory {
 					$customer['address'],
 					$customer['mobile'],
 					number_format($customer['balance'], 2),
-					'<button type="button" name="update" id="'.$customer["id"].'" class="btn btn-primary btn-sm rounded-0 update" title="update"><i class="fa fa-edit"></i></button><button type="button" name="delete" id="'.$customer["id"].'" class="btn btn-danger btn-sm rounded-0 delete"><i class="fa fa-trash"></i></button>',
+					'<button type="button" name="update" id="'.$customer["id"].'" class="btn btn-primary btn-sm rounded-0 update" title="update"><i class="fa fa-edit"></i></button>
+					<button type="button" name="delete" id="'.$customer["id"].'" class="btn btn-danger btn-sm rounded-0 delete"><i class="fa fa-trash"></i></button>',
 					''
 				];
 				$customerData[] = $customerRows;
 			}
 	
+			// Return the final output as JSON
+			$output = [
+				"draw" => intval($_POST["draw"]),
+				"recordsTotal" => $numRows,
+				"recordsFiltered" => $numRows,
+				"data" => $customerData
+			];
+			
+			// Close the statement
 			mysqli_stmt_close($stmt);
-		} else {
-			echo json_encode(['error' => 'Database error']);
-			return;
-		}
+			echo json_encode($output);
 	
-		$output = [
-			"draw" => intval($_POST["draw"]),
-			"recordsTotal" => $numRows,
-			"recordsFiltered" => $numRows,
-			"data" => $customerData
-		];
-		echo json_encode($output);
+		} else {
+			// Handle errors
+			echo json_encode(['error' => 'Database error: ' . mysqli_error($this->dbConnect)]);
+		}
 	}
+	
 	
 	private function getColumnByIndex($index) {
 		$columns = ['id', 'name', 'address', 'mobile', 'balance'];
