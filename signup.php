@@ -1,6 +1,9 @@
 <?php
 ob_start();
 session_start();
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 include('inc/header.php');
 
 // Directly establishing the database connection
@@ -15,6 +18,9 @@ if ($conn->connect_error) {
 }
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die('CSRF token validation failed');
+    }
     $name = $_POST['username'];
     $password = $_POST['password'];
     $email = $_POST['email'];
@@ -44,6 +50,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             if ($stmt->execute()) {
                 // Signup successful, redirect to login page
+                session_regenerate_id(true); // Regenerate session ID
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); // Generate a new CSRF token
                 header("Location: login.php");
                 exit(); // Ensure script termination after redirection
             } else {
@@ -85,7 +93,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <div class="card-body">
             <div class="container-fluid">
                 <form method="post" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" enctype="multipart/form-data">
-                    <div class="form-group">
+                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">    
+                <div class="form-group">
                     </div>
                     <div class="mb-3">
                         <label for="username" class="control-label">Username</label>
