@@ -3,11 +3,16 @@ ob_start();
 session_start();
 include('inc/header.php');
 
-// Directly establishing the database connection
-$servername = "sql211.infinityfree.com";
-$username = "if0_35151025";
-$password = "ZBAS8ug2jP";
-$dbname = "if0_35151025_ims_db";
+// Load environment variables from .env file
+require 'vendor/autoload.php';
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
+// Retrieve database credentials from environment variables
+$servername = $_ENV['DB_SERVERNAME'];
+$username = $_ENV['DB_USERNAME'];
+$password = $_ENV['DB_PASSWORD'];
+$dbname = $_ENV['DB_NAME'];
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 if ($conn->connect_error) {
@@ -54,6 +59,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 ?>
+
 
 <style>
     /* Your existing CSS and additional styling */
