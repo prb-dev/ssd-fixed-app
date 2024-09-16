@@ -9,27 +9,33 @@ $secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
 ini_set('session.cookie_secure', $secure ? 1 : 0);
 
 session_start();
-
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 include('inc/header.php');
 
 $loginError = '';
-if (!empty($_POST['email']) && !empty($_POST['pwd'])) {
-    include 'Inventory.php';
-    $inventory = new Inventory();
-    $login = $inventory->login($_POST['email'], $_POST['pwd']);
-    
-    if (!empty($login)) {
-        $_SESSION['userid'] = $login[0]['userid'];
-        $_SESSION['name'] = $login[0]['name'];
 
-        // Set a custom HttpOnly cookie for user session
-        setcookie('user_session', session_id(), time() + (86400 * 30), "/", "", $secure, true); // HttpOnly and Secure
-
-        header("Location: index.php");
-        exit;
-    } else {
-        $loginError = "Invalid email or password!";
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die('CSRF token validation failed');
     }
+if (!empty($_POST['email']) && !empty($_POST['pwd'])) {
+	include 'Inventory.php';
+	$inventory = new Inventory();
+	$login = $inventory->login($_POST['email'], $_POST['pwd']);
+	if (!empty($login)) {
+
+		// Regenerate session ID and CSRF token after successful login
+		session_regenerate_id(true);
+		$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+		
+		$_SESSION['userid'] = $login[0]['userid'];
+		$_SESSION['name'] = $login[0]['name'];
+		header("Location:index.php");
+	} else {
+		$loginError = "Invalid email or password!";
+	}
 }
 
 if (!empty($_POST['google_userid']) && !empty($_POST['google_name'])) {
@@ -47,6 +53,7 @@ if (!empty($_POST['google_userid']) && !empty($_POST['google_name'])) {
     // Redirect to homepage or another page
     header("Location: index.php");
     exit;
+}
 }
 ?>
 <style>
@@ -79,6 +86,9 @@ if (!empty($_POST['google_userid']) && !empty($_POST['google_name'])) {
 		<div class="card-body">
 			<div class="container-fluid">
 				<form method="post" action="">
+
+				<input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+
 					<div class="form-group">
 						<?php if ($loginError) { ?>
 							<div class="alert alert-danger rounded-0 py-1"><?php echo $loginError; ?></div>
