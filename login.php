@@ -1,10 +1,19 @@
 <?php
 ob_start();
+
+// Set HttpOnly flag for session cookies before starting the session
+ini_set('session.cookie_httponly', 1);
+
+// Optionally, set the Secure flag if your site uses HTTPS
+$secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+ini_set('session.cookie_secure', $secure ? 1 : 0);
+
 session_start();
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 include('inc/header.php');
+
 $loginError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -30,17 +39,20 @@ if (!empty($_POST['email']) && !empty($_POST['pwd'])) {
 }
 
 if (!empty($_POST['google_userid']) && !empty($_POST['google_name'])) {
-	// Sanitize input data
-	$googleUserId = htmlspecialchars($_POST['google_userid'], ENT_QUOTES, 'UTF-8');
-	$googleName = htmlspecialchars($_POST['google_name'], ENT_QUOTES, 'UTF-8');
+    // Sanitize input data
+    $googleUserId = htmlspecialchars($_POST['google_userid'], ENT_QUOTES, 'UTF-8');
+    $googleName = htmlspecialchars($_POST['google_name'], ENT_QUOTES, 'UTF-8');
 
-	// Set session variables
-	$_SESSION['userid'] = $googleUserId;
-	$_SESSION['name'] = $googleName;
+    // Set session variables
+    $_SESSION['userid'] = $googleUserId;
+    $_SESSION['name'] = $googleName;
 
-	// Redirect to homepage or another page
-	header("Location:index.php");
-	exit;
+    // Set a custom HttpOnly cookie for Google login session
+    setcookie('user_session', session_id(), time() + (86400 * 30), "/", "", $secure, true); // HttpOnly and Secure
+
+    // Redirect to homepage or another page
+    header("Location: index.php");
+    exit;
 }
 }
 ?>
