@@ -1,3 +1,7 @@
+<?php
+require_once 'inc/cookie_utils.php';
+?>
+
 <!DOCTYPE html>
 <html>
 <head>

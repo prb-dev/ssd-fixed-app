@@ -1,7 +1,7 @@
 <?php
 ob_start();
 session_start();
-include('inc/header.php');
+require_once 'init.php';
 
 // Directly establishing the database connection
 $servername = "sql211.infinityfree.com";
@@ -53,6 +53,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 }
+
+if (isset($_POST['username'])) {
+    setSecureCookie('signup_cookie', $_POST['username'], time() + 3600, '/');
+}
+
 ?>
 
 <style>
