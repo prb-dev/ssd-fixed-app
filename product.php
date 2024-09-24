@@ -1,5 +1,4 @@
 <?php
-require_once 'init.php';
 ob_start();
 session_start();
 include('inc/header.php');

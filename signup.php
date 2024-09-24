@@ -1,13 +1,21 @@
 <?php
 ob_start();
 session_start();
-require_once 'init.php';
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+include('inc/header.php');
 
-// Directly establishing the database connection
-$servername = "sql211.infinityfree.com";
-$username = "if0_35151025";
-$password = "ZBAS8ug2jP";
-$dbname = "if0_35151025_ims_db";
+// Load environment variables from .env file
+require 'vendor/autoload.php';
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
+// Retrieve database credentials from environment variables
+$servername = $_ENV['DB_SERVERNAME'];
+$username = $_ENV['DB_USERNAME'];
+$password = $_ENV['DB_PASSWORD'];
+$dbname = $_ENV['DB_NAME'];
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 if ($conn->connect_error) {
@@ -15,6 +23,9 @@ if ($conn->connect_error) {
 }
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die('CSRF token validation failed');
+    }
     $name = $_POST['username'];
     $password = $_POST['password'];
     $email = $_POST['email'];
@@ -44,6 +55,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             if ($stmt->execute()) {
                 // Signup successful, redirect to login page
+                session_regenerate_id(true); // Regenerate session ID
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); // Generate a new CSRF token
                 header("Location: login.php");
                 exit(); // Ensure script termination after redirection
             } else {
@@ -53,12 +66,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 }
-
-if (isset($_POST['username'])) {
-    setSecureCookie('signup_cookie', $_POST['username'], time() + 3600, '/');
-}
-
 ?>
+
 
 <style>
     /* Your existing CSS and additional styling */
@@ -90,7 +99,8 @@ if (isset($_POST['username'])) {
         <div class="card-body">
             <div class="container-fluid">
                 <form method="post" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" enctype="multipart/form-data">
-                    <div class="form-group">
+                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">    
+                <div class="form-group">
                     </div>
                     <div class="mb-3">
                         <label for="username" class="control-label">Username</label>

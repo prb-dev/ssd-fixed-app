@@ -3,11 +3,18 @@ ob_start();
 session_start();
 include('inc/header.php');
 
+// Load environment variables from .env file
+require 'vendor/autoload.php';
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
+// Retrieve database credentials from environment variables
+$servername = $_ENV['DB_SERVERNAME'];
+$username = $_ENV['DB_USERNAME'];
+$password = $_ENV['DB_PASSWORD'];
+$dbname = $_ENV['DB_NAME'];
+
 // Database connection
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ims_db";
 $conn = new mysqli($servername, $username, $password, $dbname);
 
 if ($conn->connect_error) {
