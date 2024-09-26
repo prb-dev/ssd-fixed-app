@@ -1,4 +1,5 @@
 <?php
+require_once 'init.php';
 ob_start();
 session_start();
 if (empty($_SESSION['csrf_token'])) {

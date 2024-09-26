@@ -1,4 +1,5 @@
 <?php
+require_once 'init.php';
 ob_start();
 
 // Set HttpOnly flag for session cookies before starting the session
