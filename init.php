@@ -14,7 +14,9 @@ set_error_handler("customErrorHandler");
 
 // Exception handler
 function customExceptionHandler($exception) {
-    error_log("Uncaught exceptsion: " . $exception->getMessage());
+ 
+    error_log("Uncaught exception: " . $exception->getMessage());
+ 
     echo "An unexpected error occurred. Please try again later.";
 }
 set_exception_handler("customExceptionHandler");
