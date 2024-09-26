@@ -1,9 +1,8 @@
 # Let's create the README.txt file with the provided content.
 
-readme_content = """
-IMS-Sirigampola-V2 - Vulnerability Fixing
+## IMS-Sirigampola-V2 - Vulnerability Fixing
 
-Group Members:
+### Group Members:
 - S.M.R.R.Siriwardhana (IT21388934)
 - Kulathunga R.G.G.P (IT21288630)
 - J.A.P.M Jayasinghe (IT21225406)
@@ -25,9 +24,4 @@ Video Demonstration:
 YouTube Video Link
 """
 
-# Save the content to a README.txt file
-file_path = "/mnt/data/README.txt"
-with open(file_path, "w") as file:
-    file.write(readme_content)
 
-file_path
