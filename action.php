@@ -1,4 +1,5 @@
 <?php
+require_once 'init.php';
 session_start();
 include 'Inventory.php';
 $inventory = new Inventory();

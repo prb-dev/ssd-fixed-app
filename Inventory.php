@@ -1,4 +1,5 @@
 <?php
+require_once 'init.php';
 class Inventory
 {
 	private $host  = 'localhost';
