@@ -1,4 +1,5 @@
 <?php
+require_once 'init.php';
 class Inventory
 {
 	private $host  = 'localhost';
@@ -66,20 +67,57 @@ class Inventory
 
 	public function login($email, $password)
 	{
-		$password = md5($password);
+		// Fetch the user's data including the salt
 		$sqlQuery = "
-			SELECT userid, email, password, name, type, status
+			SELECT userid, email, password, salt, name, type, status
 			FROM " . $this->userTable . " 
-			WHERE email = ? AND password = ?";
+			WHERE email = ?";
 
 		$stmt = $this->conn->prepare($sqlQuery);
-		$stmt->bind_param('ss', $email, $password);
+		$stmt->bind_param('s', $email);
 		$stmt->execute();
 
 		$result = $stmt->get_result();
-		return $result->fetch_all(MYSQLI_ASSOC);
+		$user = $result->fetch_assoc();
+
+		if ($user) {
+			// Verify the password
+			$hashedPassword = hash('sha256', $password . $user['salt']);
+			
+			if ($hashedPassword === $user['password']) {
+				// Password is correct, return user data (excluding salt and password)
+				unset($user['salt']);
+				unset($user['password']);
+				return [$user];
+			}
+		}
+
+		// If we reach here, authentication failed
+		return [];
 	}
 
+	// Add this method to generate a new salt
+	private function generateSalt($length = 16) {
+		return bin2hex(random_bytes($length));
+	}
+
+	// Add this method for user registration
+	public function registerUser($email, $password, $name, $type = 'user', $status = 'active')
+	{
+		$salt = $this->generateSalt();
+		$hashedPassword = hash('sha256', $password . $salt);
+
+		$sqlInsert = "INSERT INTO " . $this->userTable . " (email, password, salt, name, type, status) VALUES (?, ?, ?, ?, ?, ?)";
+		
+		$stmt = $this->conn->prepare($sqlInsert);
+		$stmt->bind_param('ssssss', $email, $hashedPassword, $salt, $name, $type, $status);
+		
+		if ($stmt->execute()) {
+			return true;
+		} else {
+			return false;
+		}
+	}
 
 	public function checkLogin()
 	{
