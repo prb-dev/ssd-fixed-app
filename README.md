@@ -1,4 +1,4 @@
-# Let's create the README.txt file with the provided content.
+
 
 ## IMS-Sirigampola-V2 - Vulnerability Fixing
 
